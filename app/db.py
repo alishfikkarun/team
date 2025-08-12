@@ -1,47 +1,41 @@
+# bot/db.py
+import sqlite3
 import json
-import aiosqlite
+import datetime
 from typing import Optional
-from .config import cfg
 
+DB_PATH = "data/gifts.db"
 
-CREATE_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS gifts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    slug TEXT UNIQUE NOT NULL,
-    payload_json TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-"""
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS gifts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT UNIQUE,
+        payload_json TEXT,
+        created_at TEXT
+    )
+    """)
+    conn.commit()
+    conn.close()
 
+def save_gift(slug: str, payload: dict):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO gifts (slug, payload_json, created_at) VALUES (?, ?, ?)",
+        (slug, json.dumps(payload, ensure_ascii=False), datetime.datetime.utcnow().isoformat())
+    )
+    conn.commit()
+    conn.close()
 
-class Database:
-    def __init__(self, path: str):
-        self.path = path
-
-    async def init(self):
-        async with aiosqlite.connect(self.path) as db:
-            await db.execute(CREATE_TABLE_SQL)
-            await db.commit()
-
-    async def save_gift(self, slug: str, payload: dict) -> int:
-        async with aiosqlite.connect(self.path) as db:
-            cur = await db.execute(
-                "INSERT INTO gifts (slug, payload_json) VALUES (?, ?)",
-                (slug, json.dumps(payload, ensure_ascii=False)),
-            )
-            await db.commit()
-            return cur.lastrowid
-
-    async def get_gift_by_slug(self, slug: str) -> Optional[dict]:
-        async with aiosqlite.connect(self.path) as db:
-            cur = await db.execute("SELECT payload_json FROM gifts WHERE slug = ?", (slug,))
-            row = await cur.fetchone()
-            if not row:
-                return None
-            try:
-                return json.loads(row[0])
-            except Exception:
-                return None
-
-
-db = Database(cfg.DB_PATH)
+def get_gift(slug: str) -> Optional[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT payload_json FROM gifts WHERE slug = ?", (slug,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return json.loads(row[0])
